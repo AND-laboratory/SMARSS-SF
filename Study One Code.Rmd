@@ -1,0 +1,315 @@
+---
+title: "GZM_SMA_factoranalysis"
+author: "Michelle Byrne"
+date: "2024-01-25"
+output: html_document
+---
+This analysis is for cross-sectional data from the Gen Z Milestones Study
+conducted in 2023 with young people aged 16-27 in Australia.
+It is a factor analysis of the SMA-RSS questionnaire, and is based on the
+following study, Kiekens, et al., 2023
+https://doi.org/10.1007/s10508-022-02474-6
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include = F}
+library(readr)
+library(tidyverse)
+library(lavaan)
+library(semPlot)
+library(reshape2)
+library(dplyr)
+library(Hmisc)
+library(corrplot)
+library(lmtest)
+library(nlsem)
+```
+
+Combine the "concerned/anxious" and "likely" responses for each scenario. 
+From Kiekens 2022: "Scores of anxious expectations were calculated for each 
+item by multiplying the responses to the two questions, similar to other RS 
+measures (Dyar et al.,2016; Pachankis et al., 2008).
+
+```{r load data}
+set.seed(123)
+setwd("C:/")
+GZMCore <- read.csv("Study One.csv")
+```
+
+```{r combine}
+# Create new variable for analyses where only male and female SAB are included
+GZMCore <- GZMCore %>%
+  mutate(IdentitySexAnalysis = ifelse(IdentitySex %in% c(1, 2), IdentitySex, NA)) %>%
+  mutate(IdentitySexAnalysis = factor(IdentitySexAnalysis))
+
+# Subset the data
+data_combined <- GZMCore[, c("AgeCurrent", "IdentitySexAnalysis",
+                              "HSS1", "HSS2", "HSS3", "HSS4", "HSS5",
+                              "HSS6", "HSS7", "HSS8", "HSS9", "HSS10",
+                              "HSS11", "HSS12", "HSS13", "HSS14")]
+```
+
+# Original Exploration
+
+Kiekens' models from 2022 indicated both a bifactor model fit best from an EFA,
+but that unidimensionality was also supported. Below we test CFAs for both
+1 and 2 factor models.
+
+Kiekens 2022 explain that 
+- *factor 1* "described scenarios in which someone was treated differently or excluded by others
+without an explicit cue that this might be related to one’s sexual orientation (e.g., a situation where someone laughs when they pass you) and perpetrators were more often peers";
+- *factor 2* "described scenarios in which there was a more explicit cue that sexual orientation
+might play a role in whether someone would be excluded or treated differently (e.g., a situation involving a same-sex partner or a joke about LGBT people). Here, perpetrators were more often adults.
+
+They also tested (with CFAs) both:
+- a *bifactor model* - items allowed to load both on a general factor and 
+2 group factors where all factor are orthogonal
+- a *second-order model* - items load on orthogonal 1st order factors and 
+those 1st order factors then load onto a general second-order factor;
+
+## One-factor
+
+```{r 1fCFA}
+# 1 factor Model without covariances between items
+f1_nocov <- "
+RS =~ HSS1 + HSS2 + HSS3 + HSS4 + HSS5 + HSS6 + HSS7 + HSS8 + HSS9 + HSS10 + HSS11 + HSS12 + HSS13 + HSS14
+"
+
+# 1 factor Model with covariances between items (see note below)
+f1_cov <- "
+RS =~ HSS1 + HSS2 + HSS3 + HSS4 + HSS5 + HSS6 + HSS7 + HSS8 + HSS9 + HSS10 + HSS11 + HSS12 + HSS13 + HSS14
+
+#Covariances
+HSS1 ~~ HSS2 + HSS3 + HSS4 + HSS5 + HSS6 + HSS7 + HSS8 + HSS9 + HSS10 + HSS11 + HSS12 + HSS13 + HSS14
+"
+
+fit_f1_nocov <- cfa(f1_nocov, data = data_combined, missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f1_nocov, fit.measures = T, standardized = T)
+fitmea_f1_nocov <- fitMeasures(fit_f1_nocov,
+                              fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+semPaths(fit_f1_nocov)
+
+# model with covariances was not identified, don't think we need them anyway:
+# fit_f1_cov <- cfa(f1_cov, data = data_combined, missing = "ML", estimator = "MLR", se = "robust.mlr")
+```
+
+## Bifactor
+
+```{r bifCFA}
+# Bifactor Model without covariances between items
+f2_nocov <- "
+F1 =~ HSS1 + HSS2 + HSS3 + HSS4 + HSS5 + HSS6 + HSS7 + HSS8 
+F2 =~ HSS9 + HSS10 + HSS11 + HSS12 + HSS13 + HSS14
+"
+
+fit_f2_nocov <- cfa(f2_nocov, data = data_combined, missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f2_nocov, fit.measures = T, standardized = T)
+fitmea_f2_nocov <- fitMeasures(fit_f2_nocov,
+                              fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+semPaths(fit_f2_nocov, whatLabels = "std", style = "ram", residuals = FALSE, intercepts = FALSE,
+         layout = "tree", edge.color = "black", edge.width = 2, # Set edges to black and width to 1
+         node.label.cex = 0.5, # Increase size of node labels
+         edge.label.cex = 1, # Increase size of edge labels
+         shapeMan = "square", sizeMan = 6, # Square shaped manifest nodes with increased size
+         shapeLat = "ellipse", sizeLat = 7, # Elliptical latent nodes with increased size
+         shapeInt = "triangle", sizeInt = 3, # Triangular intercept nodes with increased size
+         edge.label.position = 0.75, # Adjust positions of edge labels
+         nCharNodes = 4,
+         mar=c(3,3,3,3))
+```
+
+## 2nd Order
+
+```{r 2orCFA}
+# Second order Model without covariances between items
+f2order_nocov <- "
+RS_f1 =~ HSS1 + HSS2 + HSS3 + HSS4 + HSS5 + HSS6 + HSS7 + HSS8 
+RS_f2 =~ HSS9 + HSS10 + HSS11 + HSS12 + HSS13 + HSS14
+RS_gen =~ RS_f1 + RS_f2
+"
+
+fit_f2order_nocov <- cfa(f2order_nocov, data = data_combined, missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f2order_nocov, fit.measures = T, standardized = T)
+fitmea_f2order_nocov <- fitMeasures(fit_f2order_nocov,
+                              fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+semPaths(fit_f2order_nocov)
+```
+
+
+The bifactor model performs the best. Taking these 6-items from the bifactor model, we ran sex-stratified CFAs using the bifactor model and compared the fit indices for the two groups as a sensitivity analysis given the larger proportion of assigned females at birth in the sample for Study One. 
+
+# Six-item CFAs
+
+```{r 1fCFA}
+# 1 factor Model without covariances between items
+f1_nocov <- "
+RS =~ HSS1 + HSS2 + HSS4 + HSS9 + HSS10 + HSS11
+"
+
+# 1 factor Model with covariances between items (see note below)
+f1_cov <- "
+RS =~ HSS1 + HSS2 + HSS4 + HSS9 + HSS10 + HSS11
+
+#Covariances
+HSS1 ~~ HSS2 + HSS4 + HSS9 + HSS10 + HSS11
+"
+
+fit_f1_nocov <- cfa(f1_nocov, data = data_combined, missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f1_nocov, fit.measures = T, standardized = T)
+fitmea_f1_nocov <- fitMeasures(fit_f1_nocov,
+                              fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+semPaths(fit_f1_nocov)
+
+# model with covariances was not identified, don't think we need them anyway:
+# fit_f1_cov <- cfa(f1_cov, data = data_combined, missing = "ML", estimator = "MLR", se = "robust.mlr")
+```
+
+```{r bifCFA}
+# Bifactor Model without covariances between items
+f2_nocov <- "
+RS_f1 =~ HSS1 + HSS2 + HSS4
+RS_f2 =~ HSS9 + HSS10 + HSS11
+"
+
+fit_f2_nocov <- cfa(f2_nocov, data = data_combined, missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f2_nocov, fit.measures = T, standardized = T)
+fitmea_f2_nocov <- fitMeasures(fit_f2_nocov,
+                              fit.measures = c("cfi.scaled", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+semPaths(fit_f2_nocov)
+```
+
+```{r summary table}
+# Extract fit measures for the bifactor model
+fit_indices <- fitMeasures(fit_f2_nocov, fit.measures = c("cfi.scaled", "chisq.scaled", "pvalue.scaled", "rmsea.scaled", "srmr", "ecvi"))
+
+# Create a formatted data frame for the fit indices
+fit_indices_table <- data.frame(
+  Measure = c("Scaled CFI", "Scaled Chi-Square", "P-value (Chi-Square)", "Scaled RMSEA", "Scaled SRMR", "ECVI"),
+  Value = format(round(as.numeric(fit_indices), 4), nsmall = 4) # Format to 4 decimal places
+)
+
+# Print the table
+print(fit_indices_table)
+```
+
+---
+---
+
+For further elaboration, we will run a sex-stratified and age-stratified CFA using the bifactor model as this was the best fit for the full sample. TO be thorough a 1 factor model will also be run for each.
+
+```{r 1cfa sex-stratified raw}
+# Split the data by sex (male = 1, female = 2)
+male_data <- subset(data_combined, IdentitySexAnalysis == 1)
+female_data <- subset(data_combined, IdentitySexAnalysis == 2)
+
+# Fit the model for males
+fit_f1_nocov_male <- cfa(f1_nocov, data = male_data, missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f1_nocov_male, fit.measures = TRUE, standardized = TRUE)
+fitmea_f1_nocov_male <- fitMeasures(fit_f1_nocov_male, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+
+# Fit the model for females
+fit_f1_nocov_female <- cfa(f1_nocov, data = female_data, missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f1_nocov_female, fit.measures = TRUE, standardized = TRUE)
+fitmea_f1_nocov_female <- fitMeasures(fit_f1_nocov_female, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+```
+
+Below is a comparison of the fit measures for ASAB and AFAB for the 1 factor model.
+
+```{r 1cfa sex-stratified comparison}
+# Extract fit measures for male model
+male_fit_measures <- fitMeasures(fit_f1_nocov_male, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+
+# Extract fit measures for female model
+female_fit_measures <- fitMeasures(fit_f1_nocov_female, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+
+# Create a data frame for comparison
+fit_comparison <- data.frame(
+  Measure = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"),
+  Male = as.numeric(male_fit_measures),
+  Female = as.numeric(female_fit_measures)
+)
+
+# Print the comparison table
+print(fit_comparison)
+```
+
+The 1 factor model shows a poor fit, lets look at the 2 factor model for the reduced 6-items.
+
+```{r bifCFA sex-stratified male raw}
+# Run the bifactor model for males
+fit_f2_nocov_male <- cfa(f2_nocov, data = subset(data_combined, IdentitySexAnalysis == 1), missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f2_nocov_male, fit.measures = TRUE, standardized = TRUE)
+fitmea_f2_nocov_male <- fitMeasures(fit_f2_nocov_male, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+```
+
+```{r bifCFA sex-stratified female raw}
+# Run the bifactor model for females
+fit_f2_nocov_female <- cfa(f2_nocov, data = subset(data_combined, IdentitySexAnalysis == 2), missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f2_nocov_female, fit.measures = TRUE, standardized = TRUE)
+fitmea_f2_nocov_female <- fitMeasures(fit_f2_nocov_female, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+```
+
+```{r bifCFA sex-stratified comparison}
+# Extract fit measures for male model
+male_fit_measuresbif <- fitMeasures(fit_f2_nocov_male, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+                                                                        
+# Extract fit measures for female model
+female_fit_measuresbif <- fitMeasures(fit_f2_nocov_female, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+
+# Create a data frame for comparison
+fit_comparisonbif <- data.frame(
+  Measure = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"),
+  Male = as.numeric(male_fit_measuresbif),
+  Female = as.numeric(female_fit_measuresbif)
+)
+
+# Print the comparison table
+print(fit_comparisonbif)
+```
+
+```{r age stratification}
+# Split the data by age group
+lower_age_data <- subset(data_combined, AgeCurrent <= 18)
+upper_age_data <- subset(data_combined, AgeCurrent > 18)
+
+# Run the bifactor model for 18 and under
+fit_f2_nocov_lower_age <- cfa(f2_nocov, data = lower_age_data, missing = "ML", estimator = "MLR", se = "robust.mlr")
+
+# Run the bifactor model for over 18
+fit_f2_nocov_upper_age <- cfa(f2_nocov, data = upper_age_data, missing = "ML", estimator = "MLR", se = "robust.mlr")
+
+# Extract fit measures for male model
+lower_age_fit_measuresbif <- fitMeasures(fit_f2_nocov_lower_age, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+                                                                        
+# Extract fit measures for female model
+upper_age_fit_measuresbif <- fitMeasures(fit_f2_nocov_upper_age, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+
+# Create a data frame for comparison
+fit_comparisonage <- data.frame(
+  Measure = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"),
+  lower = as.numeric(lower_age_fit_measuresbif),
+  upper = as.numeric(upper_age_fit_measuresbif)
+)
+
+# Print the comparison table
+print(fit_comparisonage)
+```
+
+```{r bifCFA age-stratified low raw}
+# Run the bifactor model for males
+summary(fit_f2_nocov_lower_age, fit.measures = TRUE, standardized = TRUE)
+```
+
+```{r bifCFA age-stratified high raw}
+# Run the bifactor model for males
+summary(fit_f2_nocov_upper_age, fit.measures = TRUE, standardized = TRUE)
+```
+
+
+
+
+
+
+

@@ -1,0 +1,1114 @@
+---
+title: "SMA-RSS SF Validation"
+author: "WW"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    css: styles.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/")
+set.seed(123)
+```
+
+```{r packages}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(lavaan)
+library(semPlot)
+library(readxl)
+library(psych)
+library(JWileymisc)
+library(corrr)
+library(Hmisc)
+library(kableExtra)
+library(car)
+library(writexl)
+
+RSVal <- read.csv("Study Two.csv")
+```
+
+# Six-item Factor Analysis
+
+```{r subset data set}
+# Create new variable for analyses where only male and female SAB are included
+RSVal <- RSVal %>%
+  mutate(IdentitySexAnalysis = ifelse(SAB %in% c(1, 2), SAB, NA)) %>%
+  mutate(IdentitySexAnalysis = factor(IdentitySexAnalysis))
+
+# Subset the data
+data_combined <- RSVal[, c("AGE", "IdentitySexAnalysis",
+                              "SMARSS1", "SMARSS2", "SMARSS3", "SMARSS4", "SMARSS5",
+                              "SMARSS6")]
+```
+
+```{r bifCFA}
+# Bifactor Model without covariances between items
+f2_nocov <- "
+RS_f1 =~ SMARSS1 + SMARSS2 + SMARSS3
+RS_f2 =~ SMARSS4 + SMARSS5 + SMARSS6
+"
+
+fit_f2_nocov <- cfa(f2_nocov, data = data_combined, missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f2_nocov, fit.measures = T, standardized = T)
+fitmea_f2_nocov <- fitMeasures(fit_f2_nocov,
+                              fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+
+fit_measures <- data.frame(
+  Measure = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"),
+  Study_Two = as.numeric(fitmea_f2_nocov))
+
+print(fit_measures)
+```
+
+## Sex-stratification
+
+```{r bifCFA sex-stratified male raw}
+# Run the bifactor model for males
+fit_f2_nocov_male <- cfa(f2_nocov, data = subset(data_combined, IdentitySexAnalysis == 1), missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f2_nocov_male, fit.measures = TRUE, standardized = TRUE)
+fitmea_f2_nocov_male <- fitMeasures(fit_f2_nocov_male, fit.measures = c("cfi","ecvi","mfi", "chisq", "pvalue","rmsea"))
+```
+
+```{r bifCFA sex-stratified female raw}
+# Run the bifactor model for females
+fit_f2_nocov_female <- cfa(f2_nocov, data = subset(data_combined, IdentitySexAnalysis == 2), missing = "ML", estimator = "MLR", se = "robust.mlr")
+summary(fit_f2_nocov_female, fit.measures = TRUE, standardized = TRUE)
+```
+
+```{r bifCFA sex-stratified comparison}
+# Extract fit measures for male model with robust p-value
+male_fit_measuresbif <- fitMeasures(fit_f2_nocov_male, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+
+# Extract fit measures for female model with robust p-value
+female_fit_measuresbif <- fitMeasures(fit_f2_nocov_female, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+
+# Create a data frame for comparison
+fit_comparisonbif <- data.frame(
+  Measure = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"),
+  Male = as.numeric(male_fit_measuresbif),
+  Female = as.numeric(female_fit_measuresbif)
+)
+
+# Print the comparison table
+print(fit_comparisonbif)
+```
+
+## Age-stratification
+
+```{r age stratification}
+# Split the data by age group
+lower_age_data <- subset(RSVal, AGE <= 18)
+upper_age_data <- subset(RSVal, AGE > 18)
+
+# Run the bifactor model for 18 and under
+fit_f2_nocov_lower_age <- cfa(f2_nocov, data = lower_age_data, missing = "ML", estimator = "MLR", se = "robust.mlr")
+
+# Run the bifactor model for over 18
+fit_f2_nocov_upper_age <- cfa(f2_nocov, data = upper_age_data, missing = "ML", estimator = "MLR", se = "robust.mlr")
+
+# Extract fit measures for male model
+lower_age_fit_measuresbif <- fitMeasures(fit_f2_nocov_lower_age, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+                                                                        
+# Extract fit measures for female model
+upper_age_fit_measuresbif <- fitMeasures(fit_f2_nocov_upper_age, fit.measures = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"))
+
+# Create a data frame for comparison
+fit_comparisonage <- data.frame(
+  Measure = c("cfi", "chisq.scaled", "pvalue.scaled", "df", "rmsea.scaled", "srmr", "ecvi"),
+  lower = as.numeric(lower_age_fit_measuresbif),
+  upper = as.numeric(upper_age_fit_measuresbif)
+)
+
+# Print the comparison table
+print(fit_comparisonage)
+```
+
+```{r bifCFA age-stratified low raw}
+# Run the bifactor model for males
+summary(fit_f2_nocov_lower_age, fit.measures = TRUE, standardized = TRUE)
+```
+
+```{r bifCFA age-stratified high raw}
+# Run the bifactor model for males
+summary(fit_f2_nocov_upper_age, fit.measures = TRUE, standardized = TRUE)
+```
+
+# Criterion & Convergent Validity
+## Full Sample
+
+```{r descriptives, include=TRUE}
+# Define the variables for the correlation table
+vars <- c("SMA_RSS", "RSQ", "Overall_Outness", "IntHom", "EISS", 
+          "DERS", "RCADS_DEP", "RCADS_ANX", "DASS_D", "DASS_A", 
+          "DASS_S", "DASS_SCORE")
+
+# Select the relevant columns
+selected_data <- RSVal %>% select(all_of(vars))
+
+# Generate the correlation table using egltable
+descriptives_table <- egltable(selected_data)
+
+# Print the correlation table
+print(descriptives_table)
+```
+
+```{r correlation table, include=TRUE}
+# Calculate the correlation matrix and p-values using rcorr
+correlation_matrix_with_p <- rcorr(as.matrix(selected_data))
+
+# Extract the correlation coefficients
+cor_matrix <- correlation_matrix_with_p$r
+
+# Extract the p-values
+p_values <- correlation_matrix_with_p$P
+
+# Apply FDR correction to the p-values
+flattened_p_values <- as.vector(p_values) # Flatten the matrix
+adjusted_p_values <- p.adjust(flattened_p_values, method = "fdr") # Apply FDR correction
+adjusted_p_values_matrix <- matrix(adjusted_p_values, nrow = nrow(p_values), ncol = ncol(p_values)) # Reshape
+
+# Print the correlation coefficients
+cat("Correlation Coefficients:\n")
+print(cor_matrix)
+
+# Print the raw p-values
+cat("\nRaw P-values:\n")
+print(p_values)
+
+# Print the adjusted p-values
+cat("\nAdjusted P-values (FDR):\n")
+print(adjusted_p_values_matrix)
+
+# Determine which correlations are significant at the 0.05 level after adjustment
+significance_level <- 0.05
+significant_matrix_adjusted <- adjusted_p_values_matrix < significance_level
+
+# Print the matrix indicating significant correlations after FDR correction
+cat("\nMatrix Indicating Significant Correlations (Adjusted p < 0.05):\n")
+print(significant_matrix_adjusted)
+```
+
+## Assigned Male at Birth
+
+```{r descriptives, include=TRUE}
+# Subset the data for the correlation table
+AMAB <- RSVal %>% 
+  filter(SAB == "1")
+
+# Select the relevant columns
+selected_data <- AMAB %>% select(all_of(vars))
+
+# Generate the correlation table using egltable
+descriptives_table <- egltable(selected_data)
+
+# Print the correlation table
+print(descriptives_table)
+```
+
+```{r correlation table, include=TRUE}
+# Calculate the correlation matrix and p-values using rcorr
+correlation_matrix_with_p <- rcorr(as.matrix(selected_data))
+
+# Extract the correlation coefficients
+cor_matrix <- correlation_matrix_with_p$r
+
+# Extract the p-values
+p_values <- correlation_matrix_with_p$P
+
+# Apply FDR correction to the p-values
+flattened_p_values <- as.vector(p_values) # Flatten the matrix
+adjusted_p_values <- p.adjust(flattened_p_values, method = "fdr") # Apply FDR correction
+adjusted_p_values_matrix <- matrix(adjusted_p_values, nrow = nrow(p_values), ncol = ncol(p_values)) # Reshape
+
+# Print the correlation coefficients
+cat("Correlation Coefficients:\n")
+print(cor_matrix)
+
+# Print the raw p-values
+cat("\nRaw P-values:\n")
+print(p_values)
+
+# Print the adjusted p-values
+cat("\nAdjusted P-values (FDR):\n")
+print(adjusted_p_values_matrix)
+
+# Determine which correlations are significant at the 0.05 level after adjustment
+significance_level <- 0.05
+significant_matrix_adjusted <- adjusted_p_values_matrix < significance_level
+
+# Print the matrix indicating significant correlations after FDR correction
+cat("\nMatrix Indicating Significant Correlations (Adjusted p < 0.05):\n")
+print(significant_matrix_adjusted)
+```
+
+## Assigned Female at Birth
+
+```{r descriptives, include=TRUE}
+# Subset the data for the correlation table
+AFAB <- RSVal %>% 
+  filter(SAB == "2")
+
+# Select the relevant columns
+selected_data <- AFAB %>% select(all_of(vars))
+
+# Generate the correlation table using egltable
+descriptives_table <- egltable(selected_data)
+
+# Print the correlation table
+print(descriptives_table)
+```
+
+```{r correlation table, include=TRUE}
+# Calculate the correlation matrix and p-values using rcorr
+correlation_matrix_with_p <- rcorr(as.matrix(selected_data))
+
+# Extract the correlation coefficients
+cor_matrix <- correlation_matrix_with_p$r
+
+# Extract the p-values
+p_values <- correlation_matrix_with_p$P
+
+# Apply FDR correction to the p-values
+flattened_p_values <- as.vector(p_values) # Flatten the matrix
+adjusted_p_values <- p.adjust(flattened_p_values, method = "fdr") # Apply FDR correction
+adjusted_p_values_matrix <- matrix(adjusted_p_values, nrow = nrow(p_values), ncol = ncol(p_values)) # Reshape
+
+# Print the correlation coefficients
+cat("Correlation Coefficients:\n")
+print(cor_matrix)
+
+# Print the raw p-values
+cat("\nRaw P-values:\n")
+print(p_values)
+
+# Print the adjusted p-values
+cat("\nAdjusted P-values (FDR):\n")
+print(adjusted_p_values_matrix)
+
+# Determine which correlations are significant at the 0.05 level after adjustment
+significance_level <- 0.05
+significant_matrix_adjusted <- adjusted_p_values_matrix < significance_level
+
+# Print the matrix indicating significant correlations after FDR correction
+cat("\nMatrix Indicating Significant Correlations (Adjusted p < 0.05):\n")
+print(significant_matrix_adjusted)
+```
+
+## Older Age Group
+
+```{r descriptives, include=TRUE}
+# Select the relevant columns
+selected_data <- upper_age_data %>% select(all_of(vars))
+
+# Generate the correlation table using egltable
+descriptives_table <- egltable(selected_data)
+
+# Print the correlation table
+print(descriptives_table)
+```
+
+```{r correlation table, include=TRUE}
+# Calculate the correlation matrix and p-values using rcorr
+correlation_matrix_with_p <- rcorr(as.matrix(selected_data))
+
+# Extract the correlation coefficients
+cor_matrix <- correlation_matrix_with_p$r
+
+# Extract the p-values
+p_values <- correlation_matrix_with_p$P
+
+# Apply FDR correction to the p-values
+flattened_p_values <- as.vector(p_values) # Flatten the matrix
+adjusted_p_values <- p.adjust(flattened_p_values, method = "fdr") # Apply FDR correction
+adjusted_p_values_matrix <- matrix(adjusted_p_values, nrow = nrow(p_values), ncol = ncol(p_values)) # Reshape
+
+# Print the correlation coefficients
+cat("Correlation Coefficients:\n")
+print(cor_matrix)
+
+# Print the raw p-values
+cat("\nRaw P-values:\n")
+print(p_values)
+
+# Print the adjusted p-values
+cat("\nAdjusted P-values (FDR):\n")
+print(adjusted_p_values_matrix)
+
+# Determine which correlations are significant at the 0.05 level after adjustment
+significance_level <- 0.05
+significant_matrix_adjusted <- adjusted_p_values_matrix < significance_level
+
+# Print the matrix indicating significant correlations after FDR correction
+cat("\nMatrix Indicating Significant Correlations (Adjusted p < 0.05):\n")
+print(significant_matrix_adjusted)
+```
+
+## Younger Age Group
+
+```{r descriptives, include=TRUE}
+# Select the relevant columns
+selected_data <- lower_age_data %>% select(all_of(vars))
+
+# Generate the correlation table using egltable
+descriptives_table <- egltable(selected_data)
+
+# Print the correlation table
+print(descriptives_table)
+```
+
+```{r correlation table, include=TRUE}
+# Calculate the correlation matrix and p-values using rcorr
+correlation_matrix_with_p <- rcorr(as.matrix(selected_data))
+
+# Extract the correlation coefficients
+cor_matrix <- correlation_matrix_with_p$r
+
+# Extract the p-values
+p_values <- correlation_matrix_with_p$P
+
+# Apply FDR correction to the p-values
+flattened_p_values <- as.vector(p_values) # Flatten the matrix
+adjusted_p_values <- p.adjust(flattened_p_values, method = "fdr") # Apply FDR correction
+adjusted_p_values_matrix <- matrix(adjusted_p_values, nrow = nrow(p_values), ncol = ncol(p_values)) # Reshape
+
+# Print the correlation coefficients
+cat("Correlation Coefficients:\n")
+print(cor_matrix)
+
+# Print the raw p-values
+cat("\nRaw P-values:\n")
+print(p_values)
+
+# Print the adjusted p-values
+cat("\nAdjusted P-values (FDR):\n")
+print(adjusted_p_values_matrix)
+
+# Determine which correlations are significant at the 0.05 level after adjustment
+significance_level <- 0.05
+significant_matrix_adjusted <- adjusted_p_values_matrix < significance_level
+
+# Print the matrix indicating significant correlations after FDR correction
+cat("\nMatrix Indicating Significant Correlations (Adjusted p < 0.05):\n")
+print(significant_matrix_adjusted)
+```
+
+# Regression Analyses
+## Full Sample
+
+```{r regression test}
+# Function to run the incremental regression analysis for a given outcome and sample
+run_incremental_regression <- function(outcome_var, data, predictors) {
+  # Define the base model and the full model with SMA_RSS
+  base_model <- lm(as.formula(paste(outcome_var, "~", paste(predictors, collapse = " + "))), data = data)
+  full_model <- lm(as.formula(paste(outcome_var, "~", paste(c(predictors, "SMA_RSS"), collapse = " + "))), data = data)
+  
+  # Perform ANOVA to get the incremental validity test statistics
+  anova_result <- anova(base_model, full_model)
+  
+  # Extract the relevant statistics
+  base_r_squared <- summary(base_model)$r.squared
+  full_r_squared <- summary(full_model)$r.squared
+  delta_r_squared <- full_r_squared - base_r_squared
+  f_statistic <- anova_result[2, "F"]
+  p_delta_r_squared <- anova_result[2, "Pr(>F)"]
+  
+  sma_rss_coef <- summary(full_model)$coefficients["SMA_RSS", ]
+  sma_rss_estimate <- sma_rss_coef["Estimate"]
+  sma_rss_se <- sma_rss_coef["Std. Error"]
+  sma_rss_p <- sma_rss_coef["Pr(>|t|)"]
+  
+  # Return the results as a named vector
+  return(c(Delta_R2 = delta_r_squared, F_statistic = f_statistic, p_delta_r_squared = p_delta_r_squared,
+           SMA_RSS_Coefficient = sma_rss_estimate, SE_SMA_RSS = sma_rss_se, p_SMA_RSS = sma_rss_p))
+}
+
+# Function to apply Bonferroni correction
+apply_bonferroni_correction <- function(p_values, num_tests) {
+  corrected_p_values <- p.adjust(p_values, method = "bonferroni", n = num_tests)
+  return(corrected_p_values)
+}
+
+# List of outcome variables
+outcome_vars <- c("RCADS_DEP", "RCADS_ANX", "DASS_D", "DASS_A", "DASS_S")
+
+# Define the predictors (base model)
+predictors <- c("Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")
+
+# Define the dataset 
+complete_data <- RSVal[complete.cases(RSVal[c("RCADS_DEP", "RCADS_ANX", "DASS_D", "DASS_A", "DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+dataset_name <- "RSVal"  # Name of the dataset
+dataset <- complete_data  
+
+# Create an empty dataframe to store the results
+result_table <- data.frame()
+
+# Loop through each outcome variable
+for (outcome in outcome_vars) {
+  # Run the incremental regression for the base and full models
+  results <- run_incremental_regression(outcome, dataset, predictors)
+  
+  # Add the results to the table with appropriate labels
+  result_table <- rbind(result_table, c(dataset_name, outcome, results))
+}
+
+# Convert result_table to a more readable format
+colnames(result_table) <- c("Sample", "Outcome", "ΔR²", "F-statistic", "p (ΔR²)", "β", "SE (β)", "p (β)")
+
+# Apply Bonferroni correction for multiple comparisons
+num_tests <- length(outcome_vars) * 2  # This is the number of tests for each outcome (base and full model per outcome)
+result_table$p_ΔR2_corrected <- apply_bonferroni_correction(result_table$`p (ΔR²)`, num_tests)
+result_table$p_β_corrected <- apply_bonferroni_correction(result_table$`p (β)`, num_tests)
+
+# Print the result table using knitr for formatting
+print(knitr::kable(result_table, digits = 5, caption = "Incremental Validity Statistics for SMARSS-SF"))
+```
+
+## AMAB
+
+```{r regression test}
+# Define the dataset 
+complete_data <- AMAB[complete.cases(AMAB[c("RCADS_DEP", "RCADS_ANX", "DASS_D", "DASS_A", "DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+dataset_name <- "AMAB"  # Name of the dataset
+dataset <- complete_data
+
+# Create an empty dataframe to store the results
+result_table <- data.frame()
+
+# Loop through each outcome variable
+for (outcome in outcome_vars) {
+  # Run the incremental regression for the base and full models
+  results <- run_incremental_regression(outcome, dataset, predictors)
+  
+  # Add the results to the table with appropriate labels
+  result_table <- rbind(result_table, c(dataset_name, outcome, results))
+}
+
+# Convert result_table to a more readable format
+colnames(result_table) <- c("Sample", "Outcome", "ΔR²", "F-statistic", "p (ΔR²)", "β", "SE (β)", "p (β)")
+
+# Apply Bonferroni correction for multiple comparisons
+num_tests <- length(outcome_vars) * 2  # This is the number of tests for each outcome (base and full model per outcome)
+result_table$p_ΔR2_corrected <- apply_bonferroni_correction(result_table$`p (ΔR²)`, num_tests)
+result_table$p_β_corrected <- apply_bonferroni_correction(result_table$`p (β)`, num_tests)
+
+# Print the result table using knitr for formatting
+print(knitr::kable(result_table, digits = 5, caption = "Incremental Validity Statistics for SMARSS-SF"))
+```
+
+## AFAB
+
+```{r regression test}
+# Define the dataset 
+complete_data <- AFAB[complete.cases(AFAB[c("RCADS_DEP", "RCADS_ANX", "DASS_D", "DASS_A", "DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+dataset_name <- "AFAB"  # Name of the dataset
+dataset <- complete_data 
+
+# Create an empty dataframe to store the results
+result_table <- data.frame()
+
+# Loop through each outcome variable
+for (outcome in outcome_vars) {
+  # Run the incremental regression for the base and full models
+  results <- run_incremental_regression(outcome, dataset, predictors)
+  
+  # Add the results to the table with appropriate labels
+  result_table <- rbind(result_table, c(dataset_name, outcome, results))
+}
+
+# Convert result_table to a more readable format
+colnames(result_table) <- c("Sample", "Outcome", "ΔR²", "F-statistic", "p (ΔR²)", "β", "SE (β)", "p (β)")
+
+# Apply Bonferroni correction for multiple comparisons
+num_tests <- length(outcome_vars) * 2  # This is the number of tests for each outcome (base and full model per outcome)
+result_table$p_ΔR2_corrected <- apply_bonferroni_correction(result_table$`p (ΔR²)`, num_tests)
+result_table$p_β_corrected <- apply_bonferroni_correction(result_table$`p (β)`, num_tests)
+
+# Print the result table using knitr for formatting
+print(knitr::kable(result_table, digits = 5, caption = "Incremental Validity Statistics for SMARSS-SF"))
+```
+
+## Younger age
+
+```{r regression test}
+# Define the dataset 
+complete_data <- lower_age_data[complete.cases(lower_age_data[c("RCADS_DEP", "RCADS_ANX", "DASS_D", "DASS_A", "DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+dataset_name <- "lower_age_data"  # Name of the dataset
+dataset <- complete_data 
+
+# Create an empty dataframe to store the results
+result_table <- data.frame()
+
+# Loop through each outcome variable
+for (outcome in outcome_vars) {
+  # Run the incremental regression for the base and full models
+  results <- run_incremental_regression(outcome, dataset, predictors)
+  
+  # Add the results to the table with appropriate labels
+  result_table <- rbind(result_table, c(dataset_name, outcome, results))
+}
+
+# Convert result_table to a more readable format
+colnames(result_table) <- c("Sample", "Outcome", "ΔR²", "F-statistic", "p (ΔR²)", "β", "SE (β)", "p (β)")
+
+# Apply Bonferroni correction for multiple comparisons
+num_tests <- length(outcome_vars) * 2  # This is the number of tests for each outcome (base and full model per outcome)
+result_table$p_ΔR2_corrected <- apply_bonferroni_correction(result_table$`p (ΔR²)`, num_tests)
+result_table$p_β_corrected <- apply_bonferroni_correction(result_table$`p (β)`, num_tests)
+
+# Print the result table using knitr for formatting
+print(knitr::kable(result_table, digits = 5, caption = "Incremental Validity Statistics for SMARSS-SF"))
+```
+
+## Older age
+
+```{r regression test}
+# Define the dataset 
+complete_data <- upper_age_data[complete.cases(upper_age_data[c("RCADS_DEP", "RCADS_ANX", "DASS_D", "DASS_A", "DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+dataset_name <- "upper_age_data"  # Name of the dataset
+dataset <- complete_data
+
+# Create an empty dataframe to store the results
+result_table <- data.frame()
+
+# Loop through each outcome variable
+for (outcome in outcome_vars) {
+  # Run the incremental regression for the base and full models
+  results <- run_incremental_regression(outcome, dataset, predictors)
+  
+  # Add the results to the table with appropriate labels
+  result_table <- rbind(result_table, c(dataset_name, outcome, results))
+}
+
+# Convert result_table to a more readable format
+colnames(result_table) <- c("Sample", "Outcome", "ΔR²", "F-statistic", "p (ΔR²)", "β", "SE (β)", "p (β)")
+
+# Apply Bonferroni correction for multiple comparisons
+num_tests <- length(outcome_vars) * 2  # This is the number of tests for each outcome (base and full model per outcome)
+result_table$p_ΔR2_corrected <- apply_bonferroni_correction(result_table$`p (ΔR²)`, num_tests)
+result_table$p_β_corrected <- apply_bonferroni_correction(result_table$`p (β)`, num_tests)
+
+# Print the result table using knitr for formatting
+print(knitr::kable(result_table, digits = 5, caption = "Incremental Validity Statistics for SMARSS-SF"))
+```
+
+# Incremental Validity
+### Depression
+
+```{r incremental depression, include=TRUE}
+# Create a complete cases dataset
+complete_data <- upper_age_data[complete.cases(upper_age_data[c("RCADS_DEP", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ", "SMA_RSS")]), ]
+
+# Step 1: Define base model with known predictors
+base_model_dep <- lm(RCADS_DEP ~ Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data)
+
+# Step 2: Define full model including SMA-RSS
+full_model_dep <- lm(RCADS_DEP ~ SMA_RSS + Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data)
+
+# Step 3: Compare the two models using the anova function
+model_comparison_dep <- anova(base_model_dep, full_model_dep)
+
+# Print the model comparison to show incremental validity
+print(model_comparison_dep)
+```
+
+### Anxiety
+
+```{r incremental anxiety, include=TRUE}
+# Create a complete cases dataset
+complete_data1 <- AFAB[complete.cases(AFAB[c("RCADS_ANX", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ", "SMA_RSS")]), ]
+
+# Step 1: Define base model with known predictors
+base_model_anx <- lm(RCADS_ANX ~ Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data1)
+
+# Step 2: Define full model including SMA-RSS
+full_model_anx <- lm(RCADS_ANX ~ SMA_RSS + Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data1)
+
+# Step 3: Compare the two models using the anova function
+model_comparison_anx <- anova(base_model_anx, full_model_anx)
+
+# Print the model comparison to show incremental validity
+print(model_comparison_anx)
+```
+
+### DASS
+
+```{r incremental dass, include=TRUE}
+# Create a complete cases dataset
+complete_data2 <- AMAB[complete.cases(AMAB[c("DASS_SCORE", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ", "SMA_RSS")]), ]
+
+# Step 1: Define base model with known predictors
+base_model_dass <- lm(DASS_SCORE ~ Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data2)
+
+# Step 2: Define full model including SMA-RSS
+full_model_dass <- lm(DASS_SCORE ~ SMA_RSS + Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data2)
+
+# Step 3: Compare the two models using the anova function
+model_comparison_dass <- anova(base_model_dass, full_model_dass)
+
+# Print the model comparison to show incremental validity
+print(model_comparison_dass)
+```
+
+```{r incremental dass d, include=TRUE}
+# Create a complete cases dataset
+complete_data3 <- AMAB[complete.cases(AMAB[c("DASS_D", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ", "SMA_RSS")]), ]
+
+# Step 1: Define base model with known predictors
+base_model_dassd <- lm(DASS_D ~ Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data3)
+
+# Step 2: Define full model including SMA-RSS
+full_model_dassd <- lm(DASS_D ~ SMA_RSS + Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data3)
+
+# Step 3: Compare the two models using the anova function
+model_comparison_dassd <- anova(base_model_dassd, full_model_dassd)
+
+# Print the model comparison to show incremental validity
+print(model_comparison_dassd)
+```
+
+```{r incremental dass a, include=TRUE}
+# Create a complete cases dataset
+complete_data4 <- AMAB[complete.cases(AMAB[c("DASS_A", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ", "SMA_RSS")]), ]
+
+# Step 1: Define base model with known predictors
+base_model_dassa <- lm(DASS_A ~ Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data4)
+
+# Step 2: Define full model including SMA-RSS
+full_model_dassa <- lm(DASS_A ~ SMA_RSS + Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data4)
+
+# Step 3: Compare the two models using the anova function
+model_comparison_dassa <- anova(base_model_dassa, full_model_dassa)
+
+# Print the model comparison to show incremental validity
+print(model_comparison_dassa)
+```
+
+```{r incremental dass s, include=TRUE}
+# Create a complete cases dataset
+complete_data5 <- AMAB[complete.cases(AMAB[c("DASS_S", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ", "SMA_RSS")]), ]
+
+# Step 1: Define base model with known predictors
+base_model_dasss <- lm(DASS_S ~ Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data5)
+
+# Step 2: Define full model including SMA-RSS
+full_model_dasss <- lm(DASS_S ~ SMA_RSS + Overall_Outness + IntHom + EISS + DERS + RSQ, data = complete_data5)
+
+# Step 3: Compare the two models using the anova function
+model_comparison_dasss <- anova(base_model_dasss, full_model_dasss)
+
+# Print the model comparison to show incremental validity
+print(model_comparison_dasss)
+```
+
+# Incremental Validity v2 (Complementary Analysis)
+
+## RCADS
+
+```{r RCADS dep}
+# Define function for running incremental regression with Bonferroni correction
+run_incremental_regression <- function(outcome_var, predictors, data) {
+  results <- data.frame(
+    Predictor = character(0),
+    Delta_R2 = numeric(0),
+    F_statistic = numeric(0),
+    p_Delta_R2 = numeric(0),
+    SMARSS_SF_Coefficient = numeric(0),
+    SE_SMARSS_SF = numeric(0),
+    p_SMARSS_SF = numeric(0)
+  )
+  
+  for (predictor in predictors) {
+    # Step 1: Create and compare models
+    base_model <- lm(as.formula(paste(outcome_var, "~", predictor)), data = data)
+    full_model <- lm(as.formula(paste(outcome_var, "~", predictor, "+ SMA_RSS")), data = data)
+
+    # Step 2: Calculate R² values
+    base_r_squared <- summary(base_model)$r.squared
+    full_r_squared <- summary(full_model)$r.squared
+    delta_r_squared <- full_r_squared - base_r_squared
+    
+    # Step 3: Extract SMA_RSS coefficients
+    sma_rss_coef <- summary(full_model)$coefficients["SMA_RSS", ]
+    
+    # Step 4: Perform ANOVA to get F-statistic and p-value
+    anova_result <- anova(base_model, full_model)
+    
+    # Step 5: Store results
+    results <- rbind(results, data.frame(
+      Predictor = predictor,
+      Delta_R2 = delta_r_squared,
+      F_statistic = anova_result[2, "F"],
+      p_Delta_R2 = anova_result[2, "Pr(>F)"],
+      SMARSS_SF_Coefficient = sma_rss_coef["Estimate"],
+      SE_SMARSS_SF = sma_rss_coef["Std. Error"],
+      p_SMARSS_SF = sma_rss_coef["Pr(>|t|)"]
+    ))
+  }
+  
+  # Apply Bonferroni correction to p-values
+  num_tests <- nrow(results)  # Number of predictors being tested
+  results$p_Delta_R2_adj <- p.adjust(results$p_Delta_R2, method = "bonferroni", n = num_tests)
+  results$p_SMARSS_SF_adj <- p.adjust(results$p_SMARSS_SF, method = "bonferroni", n = num_tests)
+  
+  return(results)
+}
+
+# Running the incremental regression for the RCADS_DEP outcome
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "RCADS_DEP" 
+complete_data <- RSVal[complete.cases(RSVal[c("RCADS_DEP", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r RCADS anx}
+# Running the incremental regression for the RCADS_ANX outcome
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")
+outcome_var <- "RCADS_ANX"  
+complete_data <- RSVal[complete.cases(RSVal[c("RCADS_ANX", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+## DASS
+
+```{r DASS dep}
+# Running the incremental regression for the DASS_DEP outcome
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_D"  
+complete_data <- RSVal[complete.cases(RSVal[c("DASS_D", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS anx}
+# Running the incremental regression for the DASS_ANX outcome
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_A"  
+complete_data <- RSVal[complete.cases(RSVal[c("DASS_A", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS stress}
+# Running the incremental regression for the DASS_STRESS outcome
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS") 
+outcome_var <- "DASS_S"  
+complete_data <- RSVal[complete.cases(RSVal[c("DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+
+# Incremental Validity v2 AMAB
+
+## RCADS
+
+```{r RCADS dep}
+# Running the incremental regression for the RCADS_DEP outcome for AMAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "RCADS_DEP"  
+complete_data <- AMAB[complete.cases(AMAB[c("RCADS_DEP", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r RCADS anx}
+# Running the incremental regression for the RCADS_ANX outcome for AMAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS") 
+outcome_var <- "RCADS_ANX"  
+complete_data <- AMAB[complete.cases(AMAB[c("RCADS_ANX", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+## DASS
+
+```{r DASS dep}
+# Running the incremental regression for the DASS_DEP outcome for AMAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_D"  
+complete_data <- AMAB[complete.cases(AMAB[c("DASS_D", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS anx}
+# Running the incremental regression for the DASS_ANX outcome for AMAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_A"  
+complete_data <- AMAB[complete.cases(AMAB[c("DASS_A", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS stress}
+# Running the incremental regression for the DASS_STRESS outcome for AMAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_S" 
+complete_data <- AMAB[complete.cases(AMAB[c("DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+# Incremental Validity v2 AFAB
+
+## RCADS
+
+```{r RCADS dep}
+# Running the incremental regression for the RCADS_DEP outcome for AFAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS") 
+outcome_var <- "RCADS_DEP"  
+complete_data <- AFAB[complete.cases(AFAB[c("RCADS_DEP", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r RCADS anx}
+# Running the incremental regression for the RCADS_ANX outcome for AFAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "RCADS_ANX"  
+complete_data <- AFAB[complete.cases(AFAB[c("RCADS_ANX", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+## DASS
+
+```{r DASS dep}
+# Running the incremental regression for the DASS_DEP outcome for AFAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_D"  
+complete_data <- AFAB[complete.cases(AFAB[c("DASS_D", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS anx}
+# Running the incremental regression for the DASS_ANX outcome for AFAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_A"  
+complete_data <- AFAB[complete.cases(AFAB[c("DASS_A", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS stress}
+# Running the incremental regression for the DASS_STRESS outcome for AFAB
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_S"  
+complete_data <- AFAB[complete.cases(AFAB[c("DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+# Incremental Validity v2 Younger Age
+
+## RCADS
+
+```{r RCADS dep}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "RCADS_DEP"  
+complete_data <- lower_age_data[complete.cases(lower_age_data[c("RCADS_DEP", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r RCADS anx}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "RCADS_ANX"  
+complete_data <- lower_age_data[complete.cases(lower_age_data[c("RCADS_ANX", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+## DASS
+
+```{r DASS dep}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_D"  
+complete_data <- lower_age_data[complete.cases(lower_age_data[c("DASS_D", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS anx}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_A"  
+complete_data <- lower_age_data[complete.cases(lower_age_data[c("DASS_A", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS stress}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_S" 
+complete_data <- lower_age_data[complete.cases(lower_age_data[c("DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+# Incremental Validity v2 Older Age
+
+## RCADS
+
+```{r RCADS dep}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "RCADS_DEP"  
+complete_data <- upper_age_data[complete.cases(upper_age_data[c("RCADS_DEP", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r RCADS anx}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "RCADS_ANX"  
+complete_data <- upper_age_data[complete.cases(upper_age_data[c("RCADS_ANX", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+## DASS
+
+```{r DASS dep}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_D"  
+complete_data <- upper_age_data[complete.cases(upper_age_data[c("DASS_D", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS anx}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_A"  
+complete_data <- upper_age_data[complete.cases(upper_age_data[c("DASS_A", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+```{r DASS stress}
+predictors <- c("RSQ", "Overall_Outness", "IntHom", "EISS", "DERS")  
+outcome_var <- "DASS_S"  
+complete_data <- upper_age_data[complete.cases(upper_age_data[c("DASS_S", "SMA_RSS", "Overall_Outness", "IntHom", "EISS", "DERS", "RSQ")]), ]
+
+# Running the analysis
+incremental_results <- run_incremental_regression(outcome_var, predictors, complete_data)
+
+# Display the results in a table 
+print(knitr::kable(incremental_results, digits = 5, caption = "Incremental Validity for SMARSS-SF Against Each Predictor (Bonferroni Adjusted)"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
